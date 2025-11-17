@@ -7,11 +7,11 @@ const dbPath = "bank.db";
 const sqlite = new Database(dbPath);
 export const db = drizzle(sqlite, { schema });
 
-const connections: Database.Database[] = [];
+// const connections: Database.Database[] = [];
 
 export function initDb() {
-  const conn = new Database(dbPath);
-  connections.push(conn);
+  // const conn = new Database(dbPath);
+  // connections.push(conn);
 
   // Create tables if they don't exist
   sqlite.exec(`
@@ -64,3 +64,17 @@ export function initDb() {
 
 // Initialize database on import
 initDb();
+
+//close the connection gracefully on shutdown
+const closeDatabase = () => {
+  try {
+    sqlite.close();
+    console.log("SQLite connection closed.");
+  } catch (err) {
+    console.error("Error closing SQLite connection:", err);
+  }
+};
+
+process.once("SIGINT", closeDatabase);
+process.once("SIGTERM", closeDatabase);
+process.once("beforeExit", closeDatabase);

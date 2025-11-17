@@ -25,27 +25,35 @@ export default function LoginPage() {
   const onSubmit = async (data: LoginFormData) => {
     try {
       setError("");
-      await loginMutation.mutateAsync(data);
+
+      const normalized = {
+        ...data,
+        email: data.email.trim().toLowerCase(),
+      };
+
+      await loginMutation.mutateAsync(normalized);
       router.push("/dashboard");
     } catch (err: any) {
       setError(err.message || "Invalid credentials");
     }
   };
 
+
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-background flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-md w-full space-y-8">
         <div>
-          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">Sign in to your account</h2>
+          <h2 className="mt-6 text-center text-3xl font-extrabold text-foreground">Sign in to your account</h2>
         </div>
 
         <form className="mt-8 space-y-6" onSubmit={handleSubmit(onSubmit)}>
           <div className="space-y-4">
             <div>
-              <label htmlFor="email" className="block text-sm font-medium text-gray-700">
+              <label htmlFor="email" className="block text-sm font-medium text-foreground">
                 Email
               </label>
-              <input
+              
+              {/* <input
                 {...register("email", {
                   required: "Email is required",
                   pattern: {
@@ -55,12 +63,31 @@ export default function LoginPage() {
                 })}
                 type="email"
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2 border"
+              /> */}
+
+              <input
+                {...register("email", {
+                  required: "Email is required",
+                  pattern: {
+                    value: /^[^\s@]+@[^\s@]+\.[a-zA-Z]{2,}$/,
+                    message: "Enter a valid email address",
+                  },
+                  validate: {
+                    noCommonTypos: (value) =>
+                      !value.toLowerCase().endsWith(".con") ||
+                      "Email domain looks incorrect. Did you mean '.com'?",
+                  },
+                })}
+                type="email"
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2 border"
               />
+
+
               {errors.email && <p className="mt-1 text-sm text-red-600">{errors.email.message}</p>}
             </div>
 
             <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700">
+              <label htmlFor="password" className="block text-sm font-medium text-foreground">
                 Password
               </label>
               <input
@@ -87,7 +114,7 @@ export default function LoginPage() {
           </button>
         </form>
 
-        <p className="text-center text-sm text-gray-600">
+        <p className="text-center text-sm text-foreground">
           Don't have an account?{" "}
           <Link href="/signup" className="font-medium text-blue-600 hover:text-blue-500">
             Create one

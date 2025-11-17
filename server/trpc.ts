@@ -6,6 +6,8 @@ import { db } from "@/lib/db";
 import { sessions, users } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 
+const SESSION_EXPIRY_GRACE_MS = 60 * 1000;
+
 export async function createContext(opts: CreateNextContextOptions | FetchCreateContextFnOptions) {
   // Handle different adapter types
   let req: any;
@@ -52,15 +54,41 @@ export async function createContext(opts: CreateNextContextOptions | FetchCreate
         userId: number;
       };
 
-      const session = await db.select().from(sessions).where(eq(sessions.token, token)).get();
+      // const session = await db.select().from(sessions).where(eq(sessions.token, token)).get();
 
-      if (session && new Date(session.expiresAt) > new Date()) {
-        user = await db.select().from(users).where(eq(users.id, decoded.userId)).get();
-        const expiresIn = new Date(session.expiresAt).getTime() - new Date().getTime();
-        if (expiresIn < 60000) {
-          console.warn("Session about to expire");
-        }
+      // if (session && new Date(session.expiresAt) > new Date()) {
+      //   user = await db.select().from(users).where(eq(users.id, decoded.userId)).get();
+      //   const expiresIn = new Date(session.expiresAt).getTime() - new Date().getTime();
+      //   if (expiresIn < 60000) {
+      //     console.warn("Session about to expire");
+      //   }
+      // }
+
+      const session = await db
+      .select()
+      .from(sessions)
+      .where(eq(sessions.token, token))
+      .get();
+
+    if (session) {
+      const now = Date.now();
+      const expiresAtTime = new Date(session.expiresAt).getTime();
+      const expiresIn = expiresAtTime - now;
+
+      // Treat sessions as invalid once they are expired OR within the grace window
+      if (expiresIn <= SESSION_EXPIRY_GRACE_MS) {
+        // Clean up near-expired / expired session
+        await db.delete(sessions).where(eq(sessions.token, token));
+      } else {
+        // Safely-valid session
+        user = await db
+          .select()
+          .from(users)
+          .where(eq(users.id, decoded.userId))
+          .get();
       }
+    }
+
     } catch (error) {
       // Invalid token
     }

@@ -29,8 +29,8 @@ export default function DashboardPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <nav className="bg-white shadow">
+    <div className="min-h-screen bg-background text-foreground">
+      <nav className="bg-background shadow">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between h-16">
             <div className="flex items-center">
@@ -39,7 +39,7 @@ export default function DashboardPage() {
             <div className="flex items-center">
               <button
                 onClick={handleLogout}
-                className="ml-4 px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900"
+                className="ml-4 px-4 py-2 text-sm font-medium text-foreground hover:opacity-70"
               >
                 Sign Out
               </button>
@@ -51,7 +51,7 @@ export default function DashboardPage() {
       <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
         <div className="px-4 py-6 sm:px-0">
           <div className="mb-6">
-            <h2 className="text-2xl font-bold text-gray-900 mb-4">Your Accounts</h2>
+            <h2 className="text-2xl font-bold text-foreground mb-4">Your Accounts</h2>
 
             {accounts && accounts.length > 0 ? (
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -91,8 +91,8 @@ export default function DashboardPage() {
                 ))}
               </div>
             ) : (
-              <div className="text-center py-12 bg-white rounded-lg shadow">
-                <p className="text-gray-500 mb-4">You don't have any accounts yet.</p>
+              <div className="text-center py-12 bg-background rounded-lg shadow">
+                <p className="text-foreground mb-4">You don't have any accounts yet.</p>
               </div>
             )}
 
@@ -106,7 +106,7 @@ export default function DashboardPage() {
 
           {selectedAccountId && (
             <div className="mt-8">
-              <h3 className="text-xl font-bold text-gray-900 mb-4">Transaction History</h3>
+              <h3 className="text-xl font-bold text-foreground mb-4">Transaction History</h3>
               <TransactionList accountId={selectedAccountId} />
             </div>
           )}

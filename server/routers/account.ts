@@ -3,12 +3,90 @@ import { TRPCError } from "@trpc/server";
 import { protectedProcedure, router } from "../trpc";
 import { db } from "@/lib/db";
 import { accounts, transactions } from "@/lib/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, desc } from "drizzle-orm";
+import { randomInt } from "crypto";
 
-function generateAccountNumber(): string {
-  return Math.floor(Math.random() * 1000000000)
-    .toString()
-    .padStart(10, "0");
+
+export const fundAccountInputSchema = z.object({
+  accountId: z.number(),
+  amount: z.number().positive(),
+  fundingSource: z
+    .object({
+      type: z.enum(["card", "bank"]),
+      accountNumber: z.string(),
+      routingNumber: z.string().optional(),
+    })
+    .superRefine((val, ctx) => {
+      if (val.type === "card") {
+        const digits = val.accountNumber.replace(/\D/g, "");
+        if (digits.length < 13 || digits.length > 19) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["accountNumber"],
+            message: "Card number is not the right amount of digits.",
+          });
+          return;
+        }
+          if (!isValidCardNumber(digits)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["accountNumber"],
+            message: "Invalid card number",
+          });
+        }
+      }
+
+      if (val.type === "bank") {
+        if (!val.routingNumber) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["routingNumber"],
+            message: "Routing number is required for bank transfers",
+          });
+          return;
+        }
+
+        const routingDigits = val.routingNumber.replace(/\D/g, "");
+        if (!/^\d{9}$/.test(routingDigits)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["routingNumber"],
+            message: "Routing number must be 9 digits",
+          });
+        }
+      }
+    }),
+});
+
+
+export function generateAccountNumber(): string {
+  const num = randomInt(0, 10_000_000_000);
+  return num.toString().padStart(10, "0");
+}
+
+
+function isValidCardNumber(cardNumber: string): boolean {
+  const digits = cardNumber.replace(/\D/g, "");
+  if (digits.length < 13 || digits.length > 19) {
+      return false;
+    }
+
+  let sum = 0;
+  let shouldDouble = false;
+
+  for (let i = digits.length - 1; i >= 0; i--) {
+    let digit = parseInt(digits[i], 10);
+    if (Number.isNaN(digit)) return false;
+
+    if (shouldDouble) {
+      digit *= 2;
+      if (digit > 9) digit -= 9;
+    }
+    sum += digit;
+    shouldDouble = !shouldDouble;
+  }
+
+  return sum % 10 === 0;
 }
 
 export const accountRouter = router({
@@ -52,20 +130,40 @@ export const accountRouter = router({
       });
 
       // Fetch the created account
-      const account = await db.select().from(accounts).where(eq(accounts.accountNumber, accountNumber!)).get();
+    //   const account = await db.select().from(accounts).where(eq(accounts.accountNumber, accountNumber!)).get();
 
-      return (
-        account || {
-          id: 0,
-          userId: ctx.user.id,
-          accountNumber: accountNumber!,
-          accountType: input.accountType,
-          balance: 100,
-          status: "pending",
-          createdAt: new Date().toISOString(),
-        }
-      );
-    }),
+    //   return (
+    //     account || {
+    //       id: 0,
+    //       userId: ctx.user.id,
+    //       accountNumber: accountNumber!,
+    //       accountType: input.accountType,
+    //       balance: 100,
+    //       status: "pending",
+    //       createdAt: new Date().toISOString(),
+    //     }
+    //   );
+    // }),
+    
+    // Fetch the created account
+    const account = await db
+      .select()
+      .from(accounts)
+      .where(eq(accounts.accountNumber, accountNumber!))
+      .get();
+
+    // If we couldn't read back the account we just inserted, treat as a failure
+    if (!account) {
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Failed to create account",
+      });
+    }
+
+    return account;
+  }),
+
+
 
   getAccounts: protectedProcedure.query(async ({ ctx }) => {
     const userAccounts = await db.select().from(accounts).where(eq(accounts.userId, ctx.user.id));
@@ -82,6 +180,47 @@ export const accountRouter = router({
           type: z.enum(["card", "bank"]),
           accountNumber: z.string(),
           routingNumber: z.string().optional(),
+        })
+        .superRefine((val, ctx) => {
+          if (val.type === "card") {
+            const digits = val.accountNumber.replace(/\D/g, "");
+
+            if (digits.length < 13 || digits.length > 19) {
+              ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                path: ["accountNumber"],
+                message: "Card number is not the right amount of digits.",
+              });
+              return;
+            }
+            if (!isValidCardNumber(digits)) {
+              ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                path: ["accountNumber"],
+                message: "Invalid card number",
+              });
+            }
+          }
+           if (val.type === "bank") {
+            if (!val.routingNumber) {
+              ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                path: ["routingNumber"],
+                message: "Routing number is required for bank transfers",
+              });
+              return;
+            }
+
+            const routingDigits = val.routingNumber.replace(/\D/g, "");
+
+            if (!/^\d{9}$/.test(routingDigits)) {
+              ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                path: ["routingNumber"],
+                message: "Routing number must be 9 digits",
+              });
+            }
+          }
         }),
       })
     )
@@ -119,8 +258,15 @@ export const accountRouter = router({
         processedAt: new Date().toISOString(),
       });
 
-      // Fetch the created transaction
-      const transaction = await db.select().from(transactions).orderBy(transactions.createdAt).limit(1).get();
+      // Fetch the most recent transaction for this account
+      const transaction = await db
+        .select()
+        .from(transactions)
+        .where(eq(transactions.accountId, input.accountId))
+        .orderBy(desc(transactions.createdAt))
+        .limit(1)
+        .get();
+
 
       // Update account balance
       await db
@@ -130,15 +276,34 @@ export const accountRouter = router({
         })
         .where(eq(accounts.id, input.accountId));
 
-      let finalBalance = account.balance;
-      for (let i = 0; i < 100; i++) {
-        finalBalance = finalBalance + amount / 100;
+      // Read back the updated balance so the API response matches the DB
+      const updatedAccount = await db
+        .select()
+        .from(accounts)
+        .where(eq(accounts.id, input.accountId))
+        .get();
+
+      if (!updatedAccount) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to update account balance",
+        });
       }
 
       return {
         transaction,
-        newBalance: finalBalance, // This will be slightly off due to float precision
+        newBalance: updatedAccount.balance,
       };
+
+      // let finalBalance = account.balance;
+      // for (let i = 0; i < 100; i++) {
+      //   finalBalance = finalBalance + amount / 100;
+      // }
+
+      // return {
+      //   transaction,
+      //   newBalance: finalBalance, // This will be slightly off due to float precision
+      // };
     }),
 
   getTransactions: protectedProcedure
@@ -165,17 +330,24 @@ export const accountRouter = router({
       const accountTransactions = await db
         .select()
         .from(transactions)
-        .where(eq(transactions.accountId, input.accountId));
+        .where(eq(transactions.accountId, input.accountId))
+        .orderBy(desc(transactions.createdAt));
 
-      const enrichedTransactions = [];
-      for (const transaction of accountTransactions) {
-        const accountDetails = await db.select().from(accounts).where(eq(accounts.id, transaction.accountId)).get();
 
-        enrichedTransactions.push({
-          ...transaction,
-          accountType: accountDetails?.accountType,
-        });
-      }
+      // const enrichedTransactions = [];
+      // for (const transaction of accountTransactions) {
+      //   const accountDetails = await db.select().from(accounts).where(eq(accounts.id, transaction.accountId)).get();
+
+      //   enrichedTransactions.push({
+      //     ...transaction,
+      //     accountType: accountDetails?.accountType,
+      //   });
+      // }
+
+        const enrichedTransactions = accountTransactions.map((transaction) => ({
+      ...transaction,
+      accountType: account.accountType,
+    }));
 
       return enrichedTransactions;
     }),

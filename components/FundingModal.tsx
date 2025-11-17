@@ -4,6 +4,29 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { trpc } from "@/lib/trpc/client";
 
+function isValidCardNumber(cardNumber: string): boolean {
+  const digits = cardNumber.replace(/\D/g, "");
+  if (digits.length < 13 || digits.length > 19) return false;
+
+  let sum = 0;
+  let shouldDouble = false;
+
+  for (let i = digits.length - 1; i >= 0; i--) {
+    let digit = parseInt(digits[i], 10);
+    if (Number.isNaN(digit)) return false;
+
+    if (shouldDouble) {
+      digit *= 2;
+      if (digit > 9) digit -= 9;
+    }
+    sum += digit;
+    shouldDouble = !shouldDouble;
+  }
+
+  return sum % 10 === 0;
+}
+
+
 interface FundingModalProps {
   accountId: number;
   onClose: () => void;
@@ -16,6 +39,43 @@ type FundingFormData = {
   accountNumber: string;
   routingNumber?: string;
 };
+
+type CardType = "visa" | "mastercard" | "amex" | "discover";
+
+function detectCardType(cardNumber: string): CardType | null {
+  const sanitized = cardNumber.replace(/[\s-]/g, "");
+
+  // Must be all digits and between 13–19 digits (typical card lengths)
+  if (!/^\d{13,19}$/.test(sanitized)) {
+    return null;
+  }
+
+  // Visa: 4xxx, length 13/16/19
+  if (/^4\d{12}(\d{3})?(\d{3})?$/.test(sanitized)) {
+    return "visa";
+  }
+
+  // Mastercard (51–55 or 2221–2720)
+if (
+  /^5[1-5]\d{14}$/.test(sanitized) ||
+  /^(2221|222[2-9]|22[3-9]\d|2[3-6]\d{2}|27[01]\d|2720)\d{12}$/.test(sanitized)
+) {
+  return "mastercard";
+}
+
+  // American Express: 34 or 37, length 15
+  if (/^3[47]\d{13}$/.test(sanitized)) {
+    return "amex";
+  }
+
+  // Discover: 6011, 65, 644–649, length 16
+  if (/^6(?:011|5\d{2}|4[4-9]\d)\d{12}$/.test(sanitized)) {
+    return "discover";
+  }
+
+  return null;
+}
+
 
 export function FundingModal({ accountId, onClose, onSuccess }: FundingModalProps) {
   const [error, setError] = useState("");
@@ -39,6 +99,11 @@ export function FundingModal({ accountId, onClose, onSuccess }: FundingModalProp
     try {
       const amount = parseFloat(data.amount);
 
+      if (!Number.isFinite(amount) || amount <= 0) {
+        setError("Amount must be greater than $0.00");
+        return;
+      }
+
       await fundAccountMutation.mutateAsync({
         accountId,
         amount,
@@ -57,30 +122,27 @@ export function FundingModal({ accountId, onClose, onSuccess }: FundingModalProp
 
   return (
     <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center p-4">
-      <div className="bg-white rounded-lg max-w-md w-full p-6">
-        <h3 className="text-lg font-medium text-gray-900 mb-4">Fund Your Account</h3>
+      <div className="bg-background rounded-lg max-w-md w-full p-6">
+        <h3 className="text-lg font-medium text-foreground mb-4">Fund Your Account</h3>
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700">Amount</label>
+            <label  htmlFor="amount" className="block text-sm font-medium text-foreground">Amount</label>
             <div className="mt-1 relative rounded-md shadow-sm">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                 <span className="text-gray-500 sm:text-sm">$</span>
               </div>
               <input
+                id="amount"
                 {...register("amount", {
                   required: "Amount is required",
                   pattern: {
-                    value: /^\d+\.?\d{0,2}$/,
+                    value: /^(0|[1-9]\d*)(\.\d{1,2})?$/,
                     message: "Invalid amount format",
                   },
-                  min: {
-                    value: 0.0,
-                    message: "Amount must be at least $0.01",
-                  },
-                  max: {
-                    value: 10000,
-                    message: "Amount cannot exceed $10,000",
+                   validate: {
+                    greaterThanZero: (value) =>
+                      parseFloat(value) > 0 || "Amount must be greater than $0.00",
                   },
                 })}
                 type="text"
@@ -92,7 +154,7 @@ export function FundingModal({ accountId, onClose, onSuccess }: FundingModalProp
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Funding Source</label>
+            <label className="block text-sm font-medium text-foreground mb-2">Funding Source</label>
             <div className="space-y-2">
               <label className="flex items-center">
                 <input {...register("fundingType")} type="radio" value="card" className="mr-2" />
@@ -106,12 +168,14 @@ export function FundingModal({ accountId, onClose, onSuccess }: FundingModalProp
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700">
+            <label htmlFor="accountNumber" className="block text-sm font-medium text-foreground">
               {fundingType === "card" ? "Card Number" : "Account Number"}
             </label>
-            <input
+
+            {/* <input
               {...register("accountNumber", {
                 required: `${fundingType === "card" ? "Card" : "Account"} number is required`,
+
                 pattern: {
                   value: fundingType === "card" ? /^\d{16}$/ : /^\d+$/,
                   message: fundingType === "card" ? "Card number must be 16 digits" : "Invalid account number",
@@ -122,17 +186,54 @@ export function FundingModal({ accountId, onClose, onSuccess }: FundingModalProp
                     return value.startsWith("4") || value.startsWith("5") || "Invalid card number";
                   },
                 },
+
               })}
               type="text"
               className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2 border"
               placeholder={fundingType === "card" ? "1234567812345678" : "123456789"}
-            />
+            /> */}
+
+            <input
+            id="accountNumber"
+            {...register("accountNumber", {
+              required: `${fundingType === "card" ? "Card" : "Account"} number is required`,
+              validate: (value) => {
+                if (fundingType !== "card") {
+                  // Bank account: just require digits
+                  return /^\d+$/.test(value) || "Invalid account number";
+                }
+
+                const digits = value.replace(/\D/g, "");
+
+                if (digits.length < 13 || digits.length > 19) {
+                  return "Card number is not the right amount of digits.";
+                }
+
+                const cardType = detectCardType(value);
+
+                if (!cardType) {
+                  return "Unsupported card type. Please use a valid Visa, Mastercard, AmEx, or Discover card number.";
+                }
+
+                if (!isValidCardNumber(digits)) {
+                  return "Invalid card number";
+                }
+
+                return true;
+              },
+            })}
+            type="text"
+            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2 border"
+            placeholder={fundingType === "card" ? "1234567812345678" : "123456789"}
+          />
+
+
             {errors.accountNumber && <p className="mt-1 text-sm text-red-600">{errors.accountNumber.message}</p>}
           </div>
 
           {fundingType === "bank" && (
             <div>
-              <label className="block text-sm font-medium text-gray-700">Routing Number</label>
+              <label className="block text-sm font-medium text-foreground">Routing Number</label>
               <input
                 {...register("routingNumber", {
                   required: "Routing number is required",
@@ -155,7 +256,7 @@ export function FundingModal({ accountId, onClose, onSuccess }: FundingModalProp
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+              className="px-4 py-2 text-sm font-medium text-foreground bg-background border border-gray-300 rounded-md hover:bg-gray-50"
             >
               Cancel
             </button>
@@ -172,3 +273,6 @@ export function FundingModal({ accountId, onClose, onSuccess }: FundingModalProp
     </div>
   );
 }
+
+export { isValidCardNumber, detectCardType };
+
