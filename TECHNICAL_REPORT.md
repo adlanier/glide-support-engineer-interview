@@ -810,8 +810,8 @@ As a result:
 1\. Routing number was optional for ALL funding types
 
 The schema did not differentiate between:
-    - type: "card" (routing number irrelevant)
-    - type: "bank" (routing number required)
+- type: "card" (routing number irrelevant)
+- type: "bank" (routing number required)
 
 This meant a payload like:
 ```
@@ -947,11 +947,11 @@ I introduced a centralized Zod passwordSchema that enforces all required securit
 - A denylist of extremely common “fake-strong” passwords (e.g., password123!)
 ```
 const commonPasswords = [
- 			"password1!",
-  			"password123!",
-  			"qwerty123!",
-  			"welcome123!",
- 			 "admin123!",
+    "password1!",
+    "password123!",
+    "qwerty123!",
+    "welcome123!",
+    "admin123!",
 ];
 
 export const passwordSchema = z
@@ -1196,16 +1196,14 @@ Although correct Luhn and length validation were added, the backend intentionall
 - Removed all legacy prefix logic (startsWith)
     - No more startsWith("4") or startsWith("5").
 
-Backend
+2\. Backend
 
 The backend fundAccountInputSchema was updated to:
-Accept 13–19 digit card numbers
-Perform a backend Luhn check
-Reject wrong-length cards with a length-specific error
-Reject Luhn-invalid cards with “Invalid card number”
-Continue treating unsupported BINs as acceptable (by design — frontend handles brand validation)
-
-Backend Luhn function updated
+- Accept 13–19 digit card numbers
+- Perform a backend Luhn check
+- Reject wrong-length cards with a length-specific error
+- Reject Luhn-invalid cards with “Invalid card number”
+- Continue treating unsupported BINs as acceptable (by design — frontend handles brand validation)
 
 The backend isValidCardNumber() now supports 13–19 digits instead of only 16.
 
@@ -1214,14 +1212,14 @@ The backend isValidCardNumber() now supports 13–19 digits instead of only 16.
 Manual Verification
 
 Performed directly in the Funding modal:
-Visa test cards were accepted
-Mastercard cards were accepted
-American Express cards were accepted
-Discover cards were accepted
-Unsupported BINs failed with “Unsupported card type” frontend error
-Random digits that fail Luhn produced “Invalid card number”
-Short or overly long card numbers produced the correct digit-length error
-Bank funding was unaffected and behaved normally
+- Visa test cards were accepted
+- Mastercard cards were accepted
+- American Express cards were accepted
+- Discover cards were accepted
+- Unsupported BINs failed with “Unsupported card type” frontend error
+- Random digits that fail Luhn produced “Invalid card number”
+- Short or overly long card numbers produced the correct digit-length error
+- Bank funding was unaffected and behaved normally
 
 All expected behaviors matched the new validation rules.
 
@@ -1734,7 +1732,6 @@ return {
   newBalance: updatedAccount.balance,
 };
 ```
-Now:
 - The account balance is updated exactly once in the database.
 - The API reads the updated record back and returns that value.
 - The UI’s newBalance always matches the actual value in the accounts table.
@@ -1921,8 +1918,8 @@ This ensures the SQLite handle is explicitly closed when the Node process exits.
 ##### Verification
 - Only a single Database("bank.db") connection is created in `lib/db/index.ts`.
 - I searched the codebase for new Database and confirmed that:
-        - The application runtime uses a single shared connection created in `lib/db/index.ts`.
-        - The only other usage is in `scripts/db-utils.js`, which is a short-lived CLI utility that opens a connection, runs a one-off command, and then exits.
+    - The application runtime uses a single shared connection created in `lib/db/index.ts`.
+    - The only other usage is in `scripts/db-utils.js`, which is a short-lived CLI utility that opens a connection, runs a one-off command, and then exits.
 - Verified that initDb now uses the shared sqlite connection solely to create tables.
 - Manually started and stopped the dev server multiple times and observed clean shutdowns with the “SQLite connection closed.” log, indicating the connection is being released as expected.
 
